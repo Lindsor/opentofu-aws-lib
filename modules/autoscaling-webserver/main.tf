@@ -6,6 +6,9 @@ provider "aws" {
 data "aws_ami" "webserver_ami" {
   most_recent = true
 
+  # Only grab ubuntu images from the official "ubuntu" owner
+  owners = ["099720109477"]
+
   filter {
     name = "name"
     values = [
@@ -89,8 +92,67 @@ resource "aws_autoscaling_group" "webserver_autoscale" {
   desired_capacity     = var.webserver_desired_instances
   termination_policies = ["OldestInstance"]
 
+  # Do not regenerate the instances based on desired capacity
+  lifecycle {
+    ignore_changes = [desired_capacity]
+  }
+
   launch_template {
     id      = aws_launch_template.webserver_launch_template.id
     version = "$Latest"
+  }
+}
+
+resource "aws_autoscaling_policy" "webserver_scale_down_policy" {
+  name                   = "webserver_scale_down_policy"
+  autoscaling_group_name = aws_autoscaling_group.webserver_autoscale.name
+
+  adjustment_type    = "ChangeInCapacity"
+  scaling_adjustment = -1
+  cooldown           = 120
+}
+
+resource "aws_cloudwatch_metric_alarm" "webserver_scale_down_alarm" {
+  alarm_description = "Checks if CPU utilization is below a threshold to trigger the autoscale down policy"
+  alarm_actions     = [aws_autoscaling_policy.webserver_scale_down_policy.arn]
+  alarm_name        = "webserver_scale_down_alarm"
+
+  comparison_operator = "LessThanOrEqualToThreshold"
+  namespace           = "AWS/EC2"
+  metric_name         = "CPUUtilization"
+  threshold           = "25"
+  evaluation_periods  = "5"
+  period              = "30"
+  statistic           = "Average"
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.webserver_autoscale.name
+  }
+}
+
+resource "aws_autoscaling_policy" "webserver_scale_up_policy" {
+  name                   = "webserver_scale_up_policy"
+  autoscaling_group_name = aws_autoscaling_group.webserver_autoscale.name
+
+  adjustment_type    = "ChangeInCapacity"
+  scaling_adjustment = 1
+  cooldown           = 120
+}
+
+resource "aws_cloudwatch_metric_alarm" "webserver_scale_up_alarm" {
+  alarm_description = "Checks if CPU utilization is below a threshold to trigger the autoscale up policy"
+  alarm_actions     = [aws_autoscaling_policy.webserver_scale_up_policy.arn]
+  alarm_name        = "webserver_scale_up_alarm"
+
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  namespace           = "AWS/EC2"
+  metric_name         = "CPUUtilization"
+  threshold           = "75"
+  evaluation_periods  = "5"
+  period              = "30"
+  statistic           = "Average"
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.webserver_autoscale.name
   }
 }
