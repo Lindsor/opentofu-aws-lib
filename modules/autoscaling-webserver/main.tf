@@ -1,5 +1,15 @@
 provider "aws" {
   region = var.aws_region
+
+  default_tags {
+    tags = {
+      Generator = "lindsor/opentofu"
+    }
+  }
+}
+
+data "aws_availability_zones" "availability_zones" {
+  state = "available"
 }
 
 # Latest Ubuntu image
@@ -33,6 +43,36 @@ data "aws_ami" "webserver_ami" {
 
 resource "aws_vpc" "webserver_vpc" {
   cidr_block = "10.0.0.0/16"
+}
+
+# Create a subnet for each availability zone in the region
+resource "aws_subnet" "webserver_subnet" {
+  for_each = toset(data.aws_availability_zones.availability_zones.names)
+
+  vpc_id            = aws_vpc.webserver_vpc.id
+  cidr_block        = cidrsubnet("10.0.0.0/16", 8, index(data.aws_availability_zones.availability_zones.names, each.key))
+  availability_zone = each.key
+}
+
+# Create a route table association to allow traffic through
+resource "aws_internet_gateway" "webserver_igw" {
+  vpc_id = aws_vpc.webserver_vpc.id
+}
+
+resource "aws_route_table" "webserver_public_rt" {
+  vpc_id = aws_vpc.webserver_vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.webserver_igw.id
+  }
+}
+
+resource "aws_route_table_association" "webserver_subnet_association" {
+  for_each = aws_subnet.webserver_subnet
+
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.webserver_public_rt.id
 }
 
 resource "aws_security_group" "webserver_public_access_sg" {
@@ -69,20 +109,40 @@ resource "aws_security_group" "webserver_public_access_sg" {
     description      = "Allow all traffic out of webserver. This is needed for installing deps"
     from_port        = 0
     to_port          = 0
-    protocol         = "tcp"
+    protocol         = "-1"
     cidr_blocks      = ["0.0.0.0/0"]
     ipv6_cidr_blocks = ["::/0"]
   }
 }
 
 resource "aws_launch_template" "webserver_launch_template" {
-  name                   = "webserver"
-  image_id               = data.aws_ami.webserver_ami.id
-  instance_type          = var.webserver_instance_size
-  vpc_security_group_ids = [aws_security_group.webserver_public_access_sg.id]
+  name_prefix   = "webserver-"
+  image_id      = data.aws_ami.webserver_ami.id
+  instance_type = var.webserver_instance_size
+  key_name      = var.webserver_key_name
+  user_data     = base64encode(var.webserver_user_data)
 
-  key_name  = var.webserver_key_name
-  user_data = var.webserver_user_data
+  network_interfaces {
+    associate_public_ip_address = true
+    security_groups             = [aws_security_group.webserver_public_access_sg.id]
+  }
+
+  monitoring {
+    enabled = true
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  # network_interfaces {
+  #   associate_public_ip_address = true
+  # }
+
+  # metadata_options {
+  #   http_tokens   = "required" # Enforce IMDSv2
+  #   http_endpoint = "enabled"
+  # }
 }
 
 resource "aws_autoscaling_group" "webserver_autoscale" {
@@ -92,14 +152,23 @@ resource "aws_autoscaling_group" "webserver_autoscale" {
   desired_capacity     = var.webserver_desired_instances
   termination_policies = ["OldestInstance"]
 
+  vpc_zone_identifier = [
+    for s in aws_subnet.webserver_subnet : s.id
+  ]
+
   # Do not regenerate the instances based on desired capacity
   lifecycle {
-    ignore_changes = [desired_capacity]
+    ignore_changes        = [desired_capacity]
+    create_before_destroy = true
   }
 
   launch_template {
     id      = aws_launch_template.webserver_launch_template.id
     version = "$Latest"
+  }
+
+  instance_refresh {
+    strategy = "Rolling"
   }
 }
 
@@ -156,3 +225,5 @@ resource "aws_cloudwatch_metric_alarm" "webserver_scale_up_alarm" {
     AutoScalingGroupName = aws_autoscaling_group.webserver_autoscale.name
   }
 }
+
+# TODO: Attach conditional access logs based on input variable
