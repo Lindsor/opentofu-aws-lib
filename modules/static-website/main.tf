@@ -20,6 +20,8 @@ provider "aws" {
 resource "aws_s3_bucket" "static_website_bucket" {
   bucket = var.bucket_name
 
+  force_destroy = var.should_force_destroy
+
   tags = {}
 }
 
@@ -31,14 +33,13 @@ resource "aws_cloudfront_origin_access_control" "oac" {
   signing_protocol                  = "sigv4"
 }
 
-resource "aws_cloudfront_response_headers_policy" "noindex_response_header" {
-  count = var.allow_seo_index ? 0 : 1
-  name  = "NoIndexHeader"
+resource "aws_cloudfront_response_headers_policy" "default_response_header" {
+  name = "DefaultResponseHeaderBehavior"
 
   custom_headers_config {
     items {
       header   = "X-Robots-Tag"
-      value    = "noindex,nofollow"
+      value    = var.allow_seo_index ? "index,follow" : "noindex,nofollow"
       override = true
     }
   }
@@ -78,7 +79,7 @@ resource "aws_cloudfront_distribution" "website_cdn" {
 
     viewer_protocol_policy = "redirect-to-https"
 
-    response_headers_policy_id = var.allow_seo_index ? null : aws_cloudfront_response_headers_policy.noindex_response_header[0].id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.default_response_header.id
 
     forwarded_values {
       query_string = "false"

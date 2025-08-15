@@ -20,6 +20,12 @@ variable "uploader_arn" {
 }
 
 variable "allow_seo_index" {
-  description = "Weather the site should be indexable by SEO bots"
+  description = "Whether the site should be indexable by SEO bots"
   type        = bool
+}
+
+variable "should_force_destroy" {
+  description = "Whether to force detroy the stack. This will delete bucket even if theres items in it."
+  type        = bool
+  default     = false
 }
