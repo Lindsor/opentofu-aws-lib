@@ -31,6 +31,19 @@ resource "aws_cloudfront_origin_access_control" "oac" {
   signing_protocol                  = "sigv4"
 }
 
+resource "aws_cloudfront_response_headers_policy" "noindex_response_header" {
+  count = var.allow_seo_index ? 0 : 1
+  name  = "NoIndexHeader"
+
+  custom_headers_config {
+    items {
+      header   = "X-Robots-Tag"
+      value    = "noindex,nofollow"
+      override = true
+    }
+  }
+}
+
 resource "aws_cloudfront_distribution" "website_cdn" {
   enabled             = true
   default_root_object = "index.html"
@@ -64,6 +77,8 @@ resource "aws_cloudfront_distribution" "website_cdn" {
     target_origin_id = "s3-static-website-origin"
 
     viewer_protocol_policy = "redirect-to-https"
+
+    response_headers_policy_id = var.allow_seo_index ? null : aws_cloudfront_response_headers_policy.noindex_response_header[0].id
 
     forwarded_values {
       query_string = "false"
@@ -111,15 +126,18 @@ resource "aws_s3_bucket_policy" "bucket_policy" {
       },
       # IAM user/role upload access
       # TODO: use IAM policy instead to allow upload
-      # {
-      #   Sid    = "AllowUserUpload",
-      #   Effect = "Allow",
-      #   Principal = {
-      #     AWS = "arn:aws:iam::<your-account-id>:user/<your-username>"
-      #   },
-      #   Action   = ["s3:PutObject", "s3:PutObjectAcl"],
-      #   Resource = "${aws_s3_bucket.static_website_bucket.arn}/*"
-      # }
+      {
+        Sid    = "AllowUserUpload",
+        Effect = "Allow",
+        Principal = {
+          AWS = var.uploader_arn,
+        },
+        Action = [
+          "s3:PutObject",
+          "s3:PutObjectAcl",
+        ],
+        Resource = "${aws_s3_bucket.static_website_bucket.arn}/*",
+      }
     ]
   })
 }

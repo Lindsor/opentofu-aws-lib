@@ -13,3 +13,13 @@ variable "global_tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "uploader_arn" {
+  description = "The ARN of the user allowed to upload to the S3 bucket"
+  type        = string
+}
+
+variable "allow_seo_index" {
+  description = "Weather the site should be indexable by SEO bots"
+  type        = bool
+}
