@@ -88,14 +88,23 @@ resource "aws_security_group" "webserver_public_access_sg" {
     create_before_destroy = true
   }
 
-  # TODO: This should probably be only on LB security group
+  # Allow HTTP traffic only from the load balancer
+  ingress {
+    description     = "Allow HTTP access"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb_public_sg.id]
+  }
+
+  # Allow HTTP traffic from the SSH allowed IP address for testing
   ingress {
     description      = "Allow HTTP access"
     from_port        = 80
     to_port          = 80
     protocol         = "tcp"
-    cidr_blocks      = ["0.0.0.0/0"]
-    ipv6_cidr_blocks = ["::/0"]
+    cidr_blocks      = var.webserver_ssh_access_ipv4_cidr_blocks
+    ipv6_cidr_blocks = var.webserver_ssh_access_ipv6_cidr_blocks
   }
 
   ingress {
@@ -227,4 +236,64 @@ resource "aws_cloudwatch_metric_alarm" "webserver_scale_up_alarm" {
   }
 }
 
-# TODO: Attach conditional access logs based on input variable
+# Add Load balancer
+resource "aws_security_group" "alb_public_sg" {
+  name        = "alb-security-group"
+  description = "Allow HTTP traffic to the load balancer"
+  vpc_id      = aws_vpc.webserver_vpc.id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_lb" "webserver_alb" {
+  name               = "webserver-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb_public_sg.id]
+  subnets            = [for s in aws_subnet.webserver_subnet : s.id]
+}
+
+resource "aws_lb_target_group" "webserver_tg" {
+  name     = "webserver-tg"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.webserver_vpc.id
+
+  health_check {
+    path                = "/"
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 5
+    unhealthy_threshold = 2
+  }
+}
+
+resource "aws_lb_listener" "webserver_listener" {
+  load_balancer_arn = aws_lb.webserver_alb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.webserver_tg.arn
+  }
+}
+
+resource "aws_autoscaling_attachment" "asg_alb_attachment" {
+  autoscaling_group_name = aws_autoscaling_group.webserver_autoscale.name
+  lb_target_group_arn    = aws_lb_target_group.webserver_tg.arn
+}
