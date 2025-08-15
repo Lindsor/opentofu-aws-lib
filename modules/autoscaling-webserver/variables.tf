@@ -47,3 +47,9 @@ variable "webserver_desired_instances" {
   type        = number
   default     = 1
 }
+
+variable "webserver_healthcheck_path" {
+  description = "The URL path to hit in the webserver instances for healthcheck"
+  type        = string
+  default     = "/"
+}

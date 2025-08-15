@@ -1,10 +1,16 @@
+variable "default_tags" {
+  type = map(string)
+  default = {
+    "user:Generator" = "lindsor/opentofu"
+  }
+
+}
+
 provider "aws" {
   region = var.aws_region
 
   default_tags {
-    tags = {
-      Generator = "lindsor/opentofu"
-    }
+    tags = var.default_tags
   }
 }
 
@@ -43,6 +49,8 @@ data "aws_ami" "webserver_ami" {
 
 resource "aws_vpc" "webserver_vpc" {
   cidr_block = "10.0.0.0/16"
+
+  tags = {}
 }
 
 # Create a subnet for each availability zone in the region
@@ -52,11 +60,15 @@ resource "aws_subnet" "webserver_subnet" {
   vpc_id            = aws_vpc.webserver_vpc.id
   cidr_block        = cidrsubnet("10.0.0.0/16", 8, index(data.aws_availability_zones.availability_zones.names, each.key))
   availability_zone = each.key
+
+  tags = {}
 }
 
 # Create a route table association to allow traffic through
 resource "aws_internet_gateway" "webserver_igw" {
   vpc_id = aws_vpc.webserver_vpc.id
+
+  tags = {}
 }
 
 resource "aws_route_table" "webserver_public_rt" {
@@ -66,6 +78,8 @@ resource "aws_route_table" "webserver_public_rt" {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.webserver_igw.id
   }
+
+  tags = {}
 }
 
 resource "aws_route_table_association" "webserver_subnet_association" {
@@ -124,6 +138,8 @@ resource "aws_security_group" "webserver_public_access_sg" {
     cidr_blocks      = ["0.0.0.0/0"]
     ipv6_cidr_blocks = ["::/0"]
   }
+
+  tags = {}
 }
 
 resource "aws_launch_template" "webserver_launch_template" {
@@ -153,6 +169,18 @@ resource "aws_launch_template" "webserver_launch_template" {
     http_tokens   = "required" # Enforce IMDSv2
     http_endpoint = "enabled"
   }
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = merge(
+      var.default_tags,
+      {
+        "user:Name" = "webserver-instance"
+      }
+    )
+  }
+
+  tags = {}
 }
 
 resource "aws_autoscaling_group" "webserver_autoscale" {
@@ -255,6 +283,8 @@ resource "aws_security_group" "alb_public_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = {}
 }
 
 resource "aws_lb" "webserver_alb" {
@@ -263,6 +293,8 @@ resource "aws_lb" "webserver_alb" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb_public_sg.id]
   subnets            = [for s in aws_subnet.webserver_subnet : s.id]
+
+  tags = {}
 }
 
 resource "aws_lb_target_group" "webserver_tg" {
@@ -272,7 +304,7 @@ resource "aws_lb_target_group" "webserver_tg" {
   vpc_id   = aws_vpc.webserver_vpc.id
 
   health_check {
-    path                = "/"
+    path                = var.webserver_healthcheck_path
     protocol            = "HTTP"
     matcher             = "200"
     interval            = 30
@@ -280,6 +312,8 @@ resource "aws_lb_target_group" "webserver_tg" {
     healthy_threshold   = 5
     unhealthy_threshold = 2
   }
+
+  tags = {}
 }
 
 resource "aws_lb_listener" "webserver_listener" {
