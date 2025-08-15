@@ -51,6 +51,7 @@ resource "aws_cloudfront_response_headers_policy" "default_response_header" {
   }
 }
 
+# TODO: Add cache headers
 resource "aws_cloudfront_distribution" "website_cdn" {
   enabled             = true
   default_root_object = "index.html"
