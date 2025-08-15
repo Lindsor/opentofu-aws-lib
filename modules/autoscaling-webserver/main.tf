@@ -73,6 +73,8 @@ resource "aws_route_table_association" "webserver_subnet_association" {
 
   subnet_id      = each.value.id
   route_table_id = aws_route_table.webserver_public_rt.id
+
+  depends_on = [aws_route_table.webserver_public_rt, aws_subnet.webserver_subnet]
 }
 
 resource "aws_security_group" "webserver_public_access_sg" {
@@ -116,7 +118,8 @@ resource "aws_security_group" "webserver_public_access_sg" {
 }
 
 resource "aws_launch_template" "webserver_launch_template" {
-  name_prefix   = "webserver-"
+  # Hash of the user data needs to be in name to cause refresh on data change.
+  name_prefix   = "webserver-${substr(sha256(var.webserver_user_data), 0, 8)}"
   image_id      = data.aws_ami.webserver_ami.id
   instance_type = var.webserver_instance_size
   key_name      = var.webserver_key_name
@@ -135,9 +138,7 @@ resource "aws_launch_template" "webserver_launch_template" {
     create_before_destroy = true
   }
 
-  # network_interfaces {
-  #   associate_public_ip_address = true
-  # }
+  depends_on = [aws_security_group.webserver_public_access_sg]
 
   # metadata_options {
   #   http_tokens   = "required" # Enforce IMDSv2
