@@ -29,3 +29,13 @@ variable "should_force_destroy" {
   type        = bool
   default     = false
 }
+
+variable "public_domains" {
+  description = <<-EOF
+  The list of public domains that will be used to access this website.
+  This is needed since a certificate will be generated with the provided
+  domains in the SANS.
+  EOF
+  type        = list(string)
+
+}

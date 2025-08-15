@@ -17,6 +17,12 @@ provider "aws" {
   }
 }
 
+# AWS certificates must be created in us-east-1 to work
+provider "aws" {
+  alias  = "us_east_1_provider"
+  region = "us-east-1"
+}
+
 resource "aws_s3_bucket" "static_website_bucket" {
   bucket = var.bucket_name
 
@@ -49,6 +55,7 @@ resource "aws_cloudfront_distribution" "website_cdn" {
   enabled             = true
   default_root_object = "index.html"
   price_class         = "PriceClass_100"
+  aliases             = var.public_domains
 
   origin {
     domain_name              = aws_s3_bucket.static_website_bucket.bucket_regional_domain_name
@@ -91,7 +98,9 @@ resource "aws_cloudfront_distribution" "website_cdn" {
   }
 
   viewer_certificate {
-    cloudfront_default_certificate = true
+    acm_certificate_arn      = aws_acm_certificate.cloudfront_cert.arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
   }
 
   restrictions {
@@ -101,6 +110,9 @@ resource "aws_cloudfront_distribution" "website_cdn" {
   }
 
   tags = {}
+
+  # We need to wait for the certificates to be valid before updating cloudfront
+  depends_on = [aws_acm_certificate_validation.cloudfront_cert_validation]
 }
 
 
@@ -143,3 +155,22 @@ resource "aws_s3_bucket_policy" "bucket_policy" {
   })
 }
 
+resource "aws_acm_certificate" "cloudfront_cert" {
+  provider                  = aws.us_east_1_provider
+  domain_name               = var.public_domains[0]
+  validation_method         = "DNS"
+  subject_alternative_names = slice(var.public_domains, 1, length(var.public_domains))
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# Waits for all the cert validations so cloudfront doesnt fail
+resource "aws_acm_certificate_validation" "cloudfront_cert_validation" {
+  provider        = aws.us_east_1_provider
+  certificate_arn = aws_acm_certificate.cloudfront_cert.arn
+  validation_record_fqdns = [
+    for dvo in aws_acm_certificate.cloudfront_cert.domain_validation_options : dvo.resource_record_name
+  ]
+}
