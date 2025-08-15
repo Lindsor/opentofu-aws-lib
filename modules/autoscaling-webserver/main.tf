@@ -140,10 +140,10 @@ resource "aws_launch_template" "webserver_launch_template" {
 
   depends_on = [aws_security_group.webserver_public_access_sg]
 
-  # metadata_options {
-  #   http_tokens   = "required" # Enforce IMDSv2
-  #   http_endpoint = "enabled"
-  # }
+  metadata_options {
+    http_tokens   = "required" # Enforce IMDSv2
+    http_endpoint = "enabled"
+  }
 }
 
 resource "aws_autoscaling_group" "webserver_autoscale" {
