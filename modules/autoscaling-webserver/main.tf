@@ -3,14 +3,16 @@ variable "default_tags" {
   default = {
     "user:Generator" = "lindsor/opentofu"
   }
-
 }
 
 provider "aws" {
   region = var.aws_region
 
   default_tags {
-    tags = var.default_tags
+    tags = merge(
+      var.global_tags,
+      var.default_tags
+    )
   }
 }
 

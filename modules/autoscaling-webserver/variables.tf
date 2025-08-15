@@ -53,3 +53,9 @@ variable "webserver_healthcheck_path" {
   type        = string
   default     = "/"
 }
+
+variable "global_tags" {
+  description = "Tags that will be applied to every resource that supports tagging"
+  type        = map(string)
+  default     = {}
+}
